@@ -264,9 +264,9 @@ O dashboard conecta diretamente no `postgres-warehouse` (porta 5433) e apresenta
 
 ## 👤 Autor
 
-**Rafael** — Estudante de Engenharia de Software (Unoeste) e Ciência de Dados/IA (Infnet). Em transição para Engenharia de Dados.
+**Rafael Tomiazi** — Estudante de Engenharia de Software (Unoeste) e Ciência de Dados/IA (Infnet). Em transição para Engenharia de Dados.
 
-\[!\[LinkedIn](https://img.shields.io/badge/LinkedIn-Rafael\_Tomiazi-blue?logo=linkedin)](https://www.linkedin.com/in/rafaeltomiazi)
+[LinkedIn](https://www.linkedin.com/in/rafaeltomiazi)
 
 \---
 
