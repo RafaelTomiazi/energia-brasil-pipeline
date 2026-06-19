@@ -1,0 +1,22 @@
+# =====================================================================
+# Profiles — configuração de conexões do dbt
+# =====================================================================
+# Esse arquivo diz pro dbt: "quando você ouvir 'energia_brasil', use
+# essa conexão Postgres aqui".
+#
+# Em produção: profiles.yml fica em ~/.dbt/profiles.yml e tem segredos
+# Em dev: deixar inline simplifica setup. Senhas aqui são default-dev.
+# =====================================================================
+
+energia_brasil:
+  target: dev
+  outputs:
+    dev:
+      type: postgres
+      host: postgres-warehouse   # nome do container na rede do compose
+      port: 5432
+      user: warehouse
+      password: warehouse
+      dbname: energia
+      schema: public             # schema base; cada camada usa o seu
+      threads: 4                 # quantas queries em paralelo

@@ -1,0 +1,50 @@
+# =====================================================================
+# Sources — declaração das tabelas "fonte" (raw)
+# =====================================================================
+# Sources representam dados que vêm DE FORA do dbt. No nosso caso,
+# tabelas que o DAG load_silver_to_warehouse popula a partir do MinIO.
+#
+# Vantagem de declarar sources:
+#   - Os models referenciam {{ source('raw', 'aneel_mmgd') }} em vez de
+#     hardcodar 'raw.aneel_mmgd'. Se o schema mudar, ajusta só aqui.
+#   - dbt gera lineage gráfico mostrando "fact_x depende de source y"
+#   - Você pode declarar testes nas próprias sources
+# =====================================================================
+
+version: 2
+
+sources:
+  - name: raw
+    description: "Dados Parquet carregados do MinIO silver pelo DAG load_silver_to_warehouse"
+    schema: raw
+    tables:
+      - name: ons_geracao_horaria
+        description: "Geração horária por usina do SIN (Sistema Interligado Nacional)"
+        columns:
+          - name: din_instante
+            description: "Timestamp horário"
+          - name: nom_subsistema
+            description: "Subsistema (Norte/Nordeste/SE/Sul/Paraguai)"
+          - name: id_estado
+            description: "UF sigla"
+          - name: nom_tipocombustivel
+            description: "Fonte energética detalhada"
+          - name: val_geracao
+            description: "Geração em MWmédio"
+          - name: eh_renovavel
+            description: "Boolean: hidro/eólica/solar/biomassa = true"
+      - name: aneel_mmgd
+        description: "Mini e Micro Geração Distribuída — cadastro completo Brasil"
+        columns:
+          - name: data_conexao
+            description: "Data em que a usina foi conectada"
+          - name: sigla_uf
+            description: "UF sigla (chave de junção com ONS)"
+          - name: municipio
+            description: "Município (padrão IBGE)"
+          - name: fonte_geracao
+            description: "Tipo de fonte (Radiação solar, etc.)"
+          - name: potencia_kw
+            description: "Potência instalada em kW"
+          - name: classe_consumo
+            description: "Residencial/Comercial/Industrial/Rural"

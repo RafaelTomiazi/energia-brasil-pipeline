@@ -1,0 +1,53 @@
+# =====================================================================
+# Tests da camada staging
+# =====================================================================
+# dbt corre esses tests com 'dbt test'. Cada teste vira uma query SQL
+# que conta linhas que VIOLAM a regra. Se contar > 0, teste falha.
+# =====================================================================
+
+version: 2
+
+models:
+  - name: stg_ons_geracao_horaria
+    description: "Geração horária do SIN — staging"
+    columns:
+      - name: ts_geracao
+        description: "Timestamp UTC da medição"
+        tests:
+          - not_null
+      - name: sigla_uf
+        description: "UF (chave de junção com ANEEL)"
+        tests:
+          - not_null
+      - name: geracao_mwh
+        description: "Geração em MWh"
+        tests:
+          - not_null
+      - name: eh_renovavel
+        description: "True se hidro/eólica/solar/biomassa"
+        tests:
+          - not_null
+
+  - name: stg_aneel_mmgd
+    description: "Cadastro de geração distribuída — staging"
+    columns:
+      - name: id_empreendimento
+        description: "Código único do empreendimento"
+        tests:
+          - not_null
+      - name: sigla_uf
+        description: "UF (chave de junção com ONS)"
+        tests:
+          - not_null
+      - name: potencia_kw
+        description: "Potência instalada"
+        tests:
+          - not_null
+      - name: data_conexao
+        description: "Data de conexão à rede"
+        tests:
+          - not_null
+      - name: ano_conexao
+        description: "Ano de conexão (extraído da data)"
+        tests:
+          - not_null

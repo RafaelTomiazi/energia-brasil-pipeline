@@ -1,0 +1,233 @@
+# =====================================================================
+# Pipeline de Engenharia de Dados — Transição Energética do Brasil
+# Fase 4 (correção 3): dbt em container separado
+# =====================================================================
+# Mudança crítica:
+#   Antes: dbt-postgres instalado via pip dentro do Airflow (conflito)
+#   Agora: dbt rodando em container próprio (isolado, sem conflito)
+#          Airflow chama via docker exec (mesmo padrão usado com Spark)
+# =====================================================================
+
+x-airflow-common: &airflow-common
+  image: apache/airflow:2.10.5-python3.11
+  environment: &airflow-common-env
+    AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres-airflow:5432/airflow
+    AIRFLOW__CORE__FERNET_KEY: 'YlCImzjge_TeZc7jPJ7Jz2pgOtb4yTssA1pVyqIANNI='
+    AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
+    AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: 'true'
+    AIRFLOW__WEBSERVER__EXPOSE_CONFIG: 'true'
+    AIRFLOW__API__AUTH_BACKENDS: 'airflow.api.auth.backend.basic_auth,airflow.api.auth.backend.session'
+    AIRFLOW_CONN_MINIO_S3: '{"conn_type":"aws","login":"minioadmin","password":"minioadmin","extra":{"endpoint_url":"http://minio:9000","region_name":"us-east-1"}}'
+    # Sem dbt aqui — só duckdb (que não tem conflito) e os providers
+    _PIP_ADDITIONAL_REQUIREMENTS: 'apache-airflow-providers-amazon==9.0.0 requests==2.32.3 duckdb==1.1.3'
+  volumes:
+    - ./airflow/dags:/opt/airflow/dags
+    - ./airflow/logs:/opt/airflow/logs
+    - ./airflow/plugins:/opt/airflow/plugins
+    - ./spark/jobs:/opt/jobs
+    - ./dbt:/opt/dbt
+    - /var/run/docker.sock:/var/run/docker.sock
+  user: "${AIRFLOW_UID:-50000}:0"
+  depends_on: &airflow-common-depends
+    postgres-airflow:
+      condition: service_healthy
+
+services:
+
+  postgres-airflow:
+    image: postgres:15
+    container_name: postgres-airflow
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow
+    volumes:
+      - postgres-airflow-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "airflow"]
+      interval: 5s
+      retries: 5
+    restart: unless-stopped
+
+  postgres-warehouse:
+    image: postgres:15
+    container_name: postgres-warehouse
+    environment:
+      POSTGRES_USER: warehouse
+      POSTGRES_PASSWORD: warehouse
+      POSTGRES_DB: energia
+    volumes:
+      - postgres-warehouse-data:/var/lib/postgresql/data
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "warehouse"]
+      interval: 5s
+      retries: 5
+    restart: unless-stopped
+
+  minio:
+    image: minio/minio:latest
+    container_name: minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      retries: 5
+    restart: unless-stopped
+
+  minio-init:
+    image: minio/mc:latest
+    container_name: minio-init
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set local http://minio:9000 minioadmin minioadmin;
+      mc mb -p local/bronze || true;
+      mc mb -p local/silver || true;
+      mc mb -p local/gold || true;
+      echo '>>> Buckets bronze, silver e gold criados no MinIO';
+      exit 0;
+      "
+
+  airflow-init:
+    <<: *airflow-common
+    container_name: airflow-init
+    entrypoint: /bin/bash
+    command:
+      - -c
+      - |
+        airflow db migrate
+        airflow users create \
+          --username admin \
+          --password admin \
+          --firstname Admin \
+          --lastname User \
+          --role Admin \
+          --email admin@example.com || true
+        echo ">>> Airflow inicializado. Usuário admin / senha admin"
+
+  airflow-webserver:
+    <<: *airflow-common
+    container_name: airflow-webserver
+    command: webserver
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    restart: unless-stopped
+    depends_on:
+      <<: *airflow-common-depends
+
+  airflow-scheduler:
+    <<: *airflow-common
+    container_name: airflow-scheduler
+    user: "0:0"
+    entrypoint:
+      - /bin/bash
+      - -c
+      - |
+        if ! command -v docker &> /dev/null; then
+          echo ">>> Instalando docker CLI..."
+          apt-get update -qq && apt-get install -y -qq curl ca-certificates
+          install -m 0755 -d /etc/apt/keyrings
+          curl -fsSL https://download.docker.com/linux/debian/gpg -o /etc/apt/keyrings/docker.asc
+          chmod a+r /etc/apt/keyrings/docker.asc
+          echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/debian $(. /etc/os-release && echo $VERSION_CODENAME) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
+          apt-get update -qq && apt-get install -y -qq docker-ce-cli
+          chmod 666 /var/run/docker.sock || true
+          echo ">>> docker CLI instalado"
+        fi
+
+        echo ">>> Instalando duckdb..."
+        runuser -u airflow -- pip install --quiet --no-warn-script-location \
+          apache-airflow-providers-amazon==9.0.0 \
+          requests==2.32.3 \
+          duckdb==1.1.3
+        echo ">>> duckdb instalado"
+
+        exec runuser -u airflow -- airflow scheduler
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8974/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 180s
+    restart: unless-stopped
+    depends_on:
+      <<: *airflow-common-depends
+
+  spark-master:
+    image: apache/spark:3.5.3
+    container_name: spark-master
+    user: root
+    environment:
+      SPARK_NO_DAEMONIZE: "true"
+      SPARK_MASTER_HOST: spark-master
+    command: >
+      /opt/spark/sbin/start-master.sh
+    ports:
+      - "8081:8080"
+      - "7077:7077"
+    volumes:
+      - ./spark/jobs:/opt/jobs
+    restart: unless-stopped
+
+  spark-worker:
+    image: apache/spark:3.5.3
+    container_name: spark-worker
+    user: root
+    environment:
+      SPARK_NO_DAEMONIZE: "true"
+      SPARK_WORKER_MEMORY: 1500m
+      SPARK_WORKER_CORES: 2
+    command: >
+      /opt/spark/sbin/start-worker.sh spark://spark-master:7077
+    volumes:
+      - ./spark/jobs:/opt/jobs
+    depends_on:
+      - spark-master
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------
+  # NOVO — dbt em container próprio
+  # ---------------------------------------------------------------
+  # Imagem oficial mantida pela dbt-labs. Vem com dbt-core + dbt-postgres
+  # já instalados, sem conflito com nada.
+  #
+  # Container fica em "sleep infinity" — não tem processo principal,
+  # só fica ligado pra que possamos rodar comandos via docker exec.
+  # É o padrão "sidecar utility container" usado em produção.
+  # ---------------------------------------------------------------
+  dbt:
+    image: ghcr.io/dbt-labs/dbt-postgres:1.8.2
+    container_name: dbt
+    entrypoint: ["sleep", "infinity"]
+    volumes:
+      - ./dbt:/usr/app/dbt
+    working_dir: /usr/app/dbt
+    environment:
+      DBT_PROFILES_DIR: /usr/app/dbt
+    depends_on:
+      postgres-warehouse:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  postgres-airflow-data:
+  postgres-warehouse-data:
+  minio-data:

@@ -1,0 +1,52 @@
+# =====================================================================
+# Configuração principal do projeto dbt
+# =====================================================================
+# Esse arquivo diz pro dbt:
+#   - Como o projeto se chama
+#   - Onde estão os models
+#   - Como cada camada deve ser materializada (view ou table)
+# =====================================================================
+
+name: 'energia_brasil'
+version: '1.0.0'
+config-version: 2
+
+profile: 'energia_brasil'   # nome da seção em profiles.yml
+
+# Onde dbt procura cada tipo de arquivo
+model-paths: ["models"]
+analysis-paths: ["analyses"]
+test-paths: ["tests"]
+seed-paths: ["seeds"]
+macro-paths: ["macros"]
+snapshot-paths: ["snapshots"]
+
+# Pastas pra apagar com 'dbt clean'
+clean-targets:
+  - "target"
+  - "dbt_packages"
+
+# ---------------------------------------------------------------------
+# Configurações de materialização por camada
+# ---------------------------------------------------------------------
+# Materialização = como dbt persiste o model:
+#   - view: cria uma VIEW (rápido pra criar, lento pra ler — sem disco)
+#   - table: cria uma TABLE (lento pra criar, rápido pra ler — usa disco)
+#   - incremental: TABLE que acumula em vez de recriar tudo
+#
+# Padrão da indústria:
+#   - staging  → view (limpeza simples, query barata)
+#   - intermediate → view ou table (depende da complexidade)
+#   - marts → table (consumo final, precisa ser rápido)
+# ---------------------------------------------------------------------
+models:
+  energia_brasil:
+    staging:
+      +materialized: view
+      +schema: staging        # vai gerar tabelas em "staging.stg_*"
+    intermediate:
+      +materialized: view
+      +schema: intermediate
+    marts:
+      +materialized: table
+      +schema: marts          # consumo final

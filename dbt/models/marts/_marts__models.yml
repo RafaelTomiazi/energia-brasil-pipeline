@@ -1,0 +1,59 @@
+version: 2
+
+models:
+  - name: dim_uf
+    description: "Dimensão de UFs brasileiras com info de subsistema"
+    columns:
+      - name: sigla_uf
+        description: "Sigla da UF (chave natural)"
+        tests:
+          - not_null
+          - unique
+      - name: sk_uf
+        description: "Surrogate key numérica"
+        tests:
+          - not_null
+          - unique
+
+  - name: dim_fonte_energia
+    description: "Dimensão de fontes energéticas com classificação"
+    columns:
+      - name: fonte_combustivel
+        description: "Nome da fonte (chave natural)"
+        tests:
+          - not_null
+          - unique
+      - name: categoria_simplificada
+        description: "Hídrica/Eólica/Solar/Nuclear/Biomassa/Térmica"
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['Hídrica', 'Eólica', 'Solar', 'Nuclear', 'Biomassa', 'Térmica/Outras']
+
+  - name: fact_geracao_mensal
+    description: "Geração elétrica mensal por UF e fonte"
+    columns:
+      - name: sigla_uf
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_uf')
+              field: sigla_uf
+      - name: geracao_total_mwh
+        tests:
+          - not_null
+      - name: pct_renovavel
+        description: "Percentual da geração que veio de fontes renováveis (0-100)"
+
+  - name: fact_capacidade_distribuida
+    description: "Empreendimentos de geração distribuída conectados por UF/mês"
+    columns:
+      - name: sigla_uf
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_uf')
+              field: sigla_uf
+      - name: potencia_kw_novos
+        tests:
+          - not_null
