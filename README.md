@@ -2,7 +2,7 @@
 
 Pipeline end-to-end de Engenharia de Dados que processa **+5 milhões de registros** de fontes públicas (ONS e ANEEL) para analisar a transição energética brasileira: matriz elétrica renovável e explosão da solar distribuída.
 
-!\[Dashboard Power BI](docs/dashboard-preview.jpg)
+!\[Dashboard Power BI](docs/mockup-dashboard-dark.png)
 
 \---
 
